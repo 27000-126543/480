@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    v-model="visible"
+    v-model="dialogVisible"
     :title="`工位详情 - ${data?.id || ''}`"
     width="600px"
     class="workstation-detail"
@@ -92,7 +92,7 @@
     </div>
 
     <template #footer>
-      <el-button @click="visible = false">关闭</el-button>
+      <el-button @click="dialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>
@@ -115,7 +115,7 @@ const emit = defineEmits(['update:visible'])
 const chartRef = ref(null)
 let chartInstance = null
 
-const visible = computed({
+const dialogVisible = computed({
   get: () => props.visible,
   set: (val) => emit('update:visible', val)
 })
@@ -154,83 +154,97 @@ function getCapacityColor(rate) {
 }
 
 function initChart() {
-  if (!chartRef.value) return
-
-  if (chartInstance) {
-    chartInstance.destroy()
+  if (!chartRef.value) {
+    console.warn('Chart container not found')
+    return
   }
 
-  const ctx = chartRef.value.getContext('2d')
-  const productionData = generateProductionData()
+  try {
+    if (chartInstance) {
+      chartInstance.destroy()
+      chartInstance = null
+    }
 
-  chartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: productionData.labels,
-      datasets: [
-        {
-          label: '实际产量',
-          data: productionData.values,
-          borderColor: '#1890ff',
-          backgroundColor: 'rgba(24, 144, 255, 0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 3,
-          pointHoverRadius: 5
-        },
-        {
-          label: '目标产量',
-          data: productionData.targets,
-          borderColor: '#52c41a',
-          borderDash: [5, 5],
-          fill: false,
-          tension: 0,
-          pointRadius: 0
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            color: '#8c8c8c',
-            font: { size: 11 }
+    const ctx = chartRef.value.getContext('2d')
+    if (!ctx) {
+      console.warn('Canvas context not available')
+      return
+    }
+
+    const productionData = generateProductionData()
+
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: productionData.labels,
+        datasets: [
+          {
+            label: '实际产量',
+            data: productionData.values,
+            borderColor: '#1890ff',
+            backgroundColor: 'rgba(24, 144, 255, 0.1)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 5
+          },
+          {
+            label: '目标产量',
+            data: productionData.targets,
+            borderColor: '#52c41a',
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0,
+            pointRadius: 0
           }
-        },
-        tooltip: {
-          backgroundColor: 'rgba(16, 32, 60, 0.95)',
-          titleColor: '#fff',
-          bodyColor: '#e6f7ff',
-          borderColor: 'rgba(24, 144, 255, 0.3)',
-          borderWidth: 1
-        }
+        ]
       },
-      scales: {
-        x: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.05)'
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              color: '#8c8c8c',
+              font: { size: 11 }
+            }
           },
-          ticks: {
-            color: '#8c8c8c',
-            font: { size: 10 }
+          tooltip: {
+            backgroundColor: 'rgba(16, 32, 60, 0.95)',
+            titleColor: '#fff',
+            bodyColor: '#e6f7ff',
+            borderColor: 'rgba(24, 144, 255, 0.3)',
+            borderWidth: 1
           }
         },
-        y: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.05)'
+        scales: {
+          x: {
+            grid: {
+              color: 'rgba(255, 255, 255, 0.05)'
+            },
+            ticks: {
+              color: '#8c8c8c',
+              font: { size: 10 }
+            }
           },
-          ticks: {
-            color: '#8c8c8c',
-            font: { size: 10 }
-          },
-          beginAtZero: true
+          y: {
+            grid: {
+              color: 'rgba(255, 255, 255, 0.05)'
+            },
+            ticks: {
+              color: '#8c8c8c',
+              font: { size: 10 }
+            },
+            beginAtZero: true
+          }
         }
       }
-    }
-  })
+    })
+  } catch (error) {
+    console.error('Chart initialization failed:', error)
+    ElMessage.error('图表加载失败，请刷新重试')
+  }
 }
 
 function generateProductionData() {
@@ -270,7 +284,7 @@ function handleReportFault() {
       equipment.id,
       '设备异常上报',
       '工位运行异常，需要检查维修',
-      authManager.currentUser?.name || '系统'
+      authManager.currentUser.value?.name || '系统'
     )
     if (workOrder) {
       ElMessage.success(`故障已上报，工单编号: ${workOrder.id}`)
@@ -284,12 +298,19 @@ watch(() => props.visible, (val) => {
     nextTick(() => {
       initChart()
     })
+  } else {
+    if (chartInstance) {
+      chartInstance.destroy()
+      chartInstance = null
+    }
   }
 })
 
 onMounted(() => {
   if (props.visible) {
-    initChart()
+    nextTick(() => {
+      initChart()
+    })
   }
 })
 </script>

@@ -16,6 +16,7 @@ class AuthManager {
       {
         id: 'U001',
         username: 'operator1',
+        password: '123456',
         name: '操作员-张三',
         role: 'operator',
         roleName: '操作员',
@@ -31,6 +32,7 @@ class AuthManager {
       {
         id: 'U002',
         username: 'quality1',
+        password: '123456',
         name: '品控员-李四',
         role: 'quality',
         roleName: '品控',
@@ -46,6 +48,7 @@ class AuthManager {
       {
         id: 'U003',
         username: 'manager1',
+        password: '123456',
         name: '运营经理-王五',
         role: 'manager',
         roleName: '经理',
@@ -61,6 +64,7 @@ class AuthManager {
       {
         id: 'U004',
         username: 'director1',
+        password: '123456',
         name: '运营总监-赵六',
         role: 'director',
         roleName: '总监',
@@ -139,14 +143,25 @@ class AuthManager {
 
   login(username, password) {
     const user = this.users.find(u => u.username === username)
-    if (user && user.status === 'active') {
-      this.currentUser = reactive({ ...user })
-      this.recordLoginLog(user, 'password', 'success')
-      user.lastLogin = new Date()
-      return { success: true, user: this.currentUser }
+    if (!user) {
+      this.recordLoginLog({ username }, 'password', 'failed', '用户不存在')
+      return { success: false, message: '用户名或密码错误' }
     }
-    this.recordLoginLog({ username }, 'password', 'failed')
-    return { success: false, message: '用户名或密码错误' }
+    
+    if (user.status !== 'active') {
+      this.recordLoginLog(user, 'password', 'failed', '账号已禁用')
+      return { success: false, message: '账号已被禁用，请联系管理员' }
+    }
+    
+    if (user.password !== password) {
+      this.recordLoginLog(user, 'password', 'failed', '密码错误')
+      return { success: false, message: '用户名或密码错误' }
+    }
+    
+    this.currentUser.value = { ...user }
+    this.recordLoginLog(user, 'password', 'success')
+    user.lastLogin = new Date()
+    return { success: true, user: this.currentUser.value }
   }
 
   faceLogin(faceData) {
@@ -155,14 +170,14 @@ class AuthManager {
       setTimeout(() => {
         const user = this.users.find(u => u.faceData === faceData)
         if (user && user.status === 'active') {
-          this.currentUser = reactive({ ...user })
+          this.currentUser.value = { ...user }
           this.recordLoginLog(user, 'face', 'success')
           user.lastLogin = new Date()
           this.faceRecognitionStatus = 'success'
-          resolve({ success: true, user: this.currentUser })
+          resolve({ success: true, user: this.currentUser.value })
         } else {
           this.faceRecognitionStatus = 'failed'
-          this.recordLoginLog({ username: 'unknown' }, 'face', 'failed')
+          this.recordLoginLog({ username: 'unknown' }, 'face', 'failed', '人脸识别失败')
           resolve({ success: false, message: '人脸识别失败' })
         }
       }, 1500)
@@ -177,7 +192,7 @@ class AuthManager {
     this.faceRecognitionStatus = 'idle'
   }
 
-  recordLoginLog(user, method, status) {
+  recordLoginLog(user, method, status, reason = '') {
     this.loginLogs.unshift({
       id: `LOG${String(Date.now()).slice(-8)}`,
       userId: user.id || null,
@@ -187,6 +202,7 @@ class AuthManager {
       loginTime: new Date(),
       loginMethod: method,
       status,
+      reason,
       ip: '192.168.1.100',
       device: navigator.userAgent.slice(0, 100)
     })
@@ -197,14 +213,14 @@ class AuthManager {
   }
 
   recordOperationLog(action, target, result = 'success') {
-    if (!this.currentUser) return
+    if (!this.currentUser.value) return
 
     this.operationLogs.unshift({
       id: `OP${String(Date.now()).slice(-8)}`,
-      userId: this.currentUser.id,
-      username: this.currentUser.username,
-      name: this.currentUser.name,
-      role: this.currentUser.role,
+      userId: this.currentUser.value.id,
+      username: this.currentUser.value.username,
+      name: this.currentUser.value.name,
+      role: this.currentUser.value.role,
       action,
       target,
       time: new Date(),
@@ -218,23 +234,23 @@ class AuthManager {
   }
 
   logout() {
-    if (this.currentUser) {
+    if (this.currentUser.value) {
       this.recordOperationLog('退出系统', '', 'success')
     }
-    this.currentUser = null
+    this.currentUser.value = null
     this.faceRecognitionStatus = 'idle'
   }
 
   hasPermission(permission) {
-    if (!this.currentUser) return false
-    if (this.currentUser.permissions.includes('*')) return true
-    return this.currentUser.permissions.includes(permission)
+    if (!this.currentUser.value) return false
+    if (this.currentUser.value.permissions.includes('*')) return true
+    return this.currentUser.value.permissions.includes(permission)
   }
 
   hasRole(role) {
-    if (!this.currentUser) return false
+    if (!this.currentUser.value) return false
     const roleLevels = { operator: 1, quality: 2, manager: 3, director: 4 }
-    const userLevel = roleLevels[this.currentUser.role] || 0
+    const userLevel = roleLevels[this.currentUser.value.role] || 0
     const requiredLevel = roleLevels[role] || 0
     return userLevel >= requiredLevel
   }
@@ -273,8 +289,8 @@ class AuthManager {
     const user = this.users.find(u => u.id === userId)
     if (user) {
       Object.assign(user, updates)
-      if (this.currentUser && this.currentUser.id === userId) {
-        Object.assign(this.currentUser, updates)
+      if (this.currentUser.value && this.currentUser.value.id === userId) {
+        Object.assign(this.currentUser.value, updates)
       }
       return true
     }

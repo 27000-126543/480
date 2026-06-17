@@ -63,6 +63,130 @@
         <el-badge :value="lowStockCount" class="menu-badge" :hidden="lowStockCount === 0" />
       </el-menu-item>
 
+      <div v-show="showScheduling" class="scheduling-panel">
+        <div class="panel-section">
+          <div class="section-header">
+            <span class="section-title">待处理订单</span>
+            <el-button size="small" type="primary" @click.stop="handleAutoAssignAll">
+              自动分配
+            </el-button>
+          </div>
+          <div class="order-list">
+            <div 
+              v-for="order in pendingOrders.slice(0, 5)" 
+              :key="order.id"
+              class="order-item"
+            >
+              <div class="order-header">
+                <span class="order-id">{{ order.id }}</span>
+                <el-tag :type="priorityType(order.priority)" size="small">
+                  {{ priorityText(order.priority) }}
+                </el-tag>
+              </div>
+              <div class="order-info">
+                <span class="order-dish">{{ order.dish }}</span>
+                <span class="order-qty">{{ order.quantity }}份</span>
+              </div>
+              <div class="order-meta">
+                <span>交货: {{ formatDeliveryTime(order.deliveryTime) }}</span>
+              </div>
+              <div class="order-actions">
+                <el-button 
+                size="small" 
+                type="primary"
+                @click.stop="handleAssignOrder(order)"
+              >
+                分配工位
+              </el-button>
+              </div>
+            </div>
+          </div>
+          <div v-if="pendingOrders.length === 0" class="empty">
+            暂无待处理订单
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-header">
+            <span class="section-title">工位负载率</span>
+          </div>
+          <div class="workstation-loads">
+            <div 
+              v-for="ws in workstationLoads.slice(0, 6)" 
+              :key="ws.id"
+              class="load-item"
+            >
+              <div class="load-header">
+                <span>{{ ws.id }}</span>
+                <span :class="loadLevel(ws.currentLoad)">{{ ws.currentLoad.toFixed(0) }}%</span>
+              </div>
+              <el-progress 
+                :percentage="ws.currentLoad" 
+                :stroke-width="8"
+                :color="loadColor(ws.currentLoad)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-header">
+            <span class="section-title">维护批次安排</span>
+          </div>
+          <div class="maintenance-list">
+            <div 
+              v-for="mt in maintenanceSchedule" 
+              :key="mt.id"
+              class="maintenance-item"
+              :class="{ 'need-maintenance': mt.type === 'scheduled' }"
+            >
+              <div class="mt-header">
+                <span class="mt-id">{{ mt.id }}</span>
+                <el-tag size="small" :type="mt.status === 'scheduled' ? 'warning' : 'success'">
+                  {{ mt.status === 'scheduled' ? '待执行' : '已完成' }}
+                </el-tag>
+              </div>
+              <div class="mt-info">
+                <span>工位: {{ mt.workstationId }}</span>
+                <span>时长: {{ mt.duration }}分钟</span>
+              </div>
+              <div class="mt-desc">{{ mt.description }}</div>
+              <div class="mt-time">
+                安排时间: {{ formatDate(mt.scheduledTime) }}
+              </div>
+              <el-button 
+                v-if="mt.status === 'scheduled'" 
+                size="small" 
+                type="success"
+                @click.stop="handleCompleteMaintenance(mt.id)"
+              >
+                完成维护
+              </el-button>
+            </div>
+          </div>
+          <div v-if="maintenanceSchedule.length === 0" class="empty">
+            暂无维护安排
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-header">
+            <span class="section-title">推荐工位</span>
+          </div>
+          <div class="recommendation-list">
+            <div 
+              v-for="rec in recommendations" 
+              :key="rec.workstationId"
+              class="rec-item"
+            >
+              <span>{{ rec.workstationId }}</span>
+              <span class="rec-score">推荐指数: {{ rec.score.toFixed(2) }}</span>
+              <span :class="rec.level">{{ rec.level }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <el-menu-item index="approval" @click="$emit('update:showApproval', true)">
         <el-icon><Check /></el-icon>
         <span>审批中心</span>
@@ -104,11 +228,37 @@
         </el-menu-item>
       </el-sub-menu>
 
-      <el-menu-item index="reports" @click="$emit('export-report')">
+      <el-menu-item index="reports" @click="showReportDialog = true">
         <el-icon><Document /></el-icon>
         <span>报表导出</span>
       </el-menu-item>
     </el-menu>
+
+    <el-dialog
+      v-model="showReportDialog"
+      title="导出生产日报"
+      width="400px"
+      class="report-dialog"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="选择日期">
+          <el-date-picker
+            v-model="selectedReportDate"
+            type="date"
+            placeholder="选择日期（不选默认今天）"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showReportDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleExportReport">
+          导出报表
+        </el-button>
+      </template>
+    </el-dialog>
 
     <div class="sidebar-footer">
       <div class="quick-actions">
@@ -144,6 +294,8 @@ import {
   Setting, Document, Warning, WindPower
 } from '@element-plus/icons-vue'
 import { inventoryManager } from '../managers/InventoryManager.js'
+import { schedulingManager } from '../managers/SchedulingManager.js'
+import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   visible: {
@@ -171,6 +323,8 @@ const emit = defineEmits([
 const activeMenu = ref('overview')
 const showScheduling = ref(false)
 const showInventory = ref(false)
+const showReportDialog = ref(false)
+const selectedReportDate = ref('')
 
 const lowStockCount = computed(() => {
   return inventoryManager.checkLowStock().length
@@ -182,6 +336,96 @@ const pendingApprovalCount = computed(() => {
 
 function handleMenuSelect(index) {
   activeMenu.value = index
+}
+
+function handleExportReport() {
+  emit('export-report', selectedReportDate.value)
+  showReportDialog.value = false
+  selectedReportDate.value = ''
+}
+
+const pendingOrders = computed(() => schedulingManager.getPendingOrders())
+
+const workstationLoads = computed(() => schedulingManager.getWorkstationStats())
+
+const maintenanceSchedule = computed(() => schedulingManager.maintenanceSchedule)
+
+const recommendations = computed(() => {
+  const loads = schedulingManager.getWorkstationStats()
+  return loads.map(ws => {
+    const score = 100 - ws.currentLoad
+    let level = '空闲'
+    if (ws.currentLoad > 70) level = '繁忙'
+    else if (ws.currentLoad > 40) level = '正常'
+    return {
+      workstationId: ws.id,
+      currentLoad: ws.currentLoad,
+      score,
+      level
+    }
+  }).sort((a, b) => b.score - a.score).slice(0, 5)
+})
+
+function priorityType(priority) {
+  const map = { high: 'danger', medium: 'warning', low: 'info' }
+  return map[priority] || 'info'
+}
+
+function priorityText(priority) {
+  const map = { high: '紧急', medium: '普通', low: '低' }
+  return map[priority] || '低'
+}
+
+function loadLevel(load) {
+  if (load > 70) return 'load-high'
+  if (load > 40) return 'load-medium'
+  return 'load-low'
+}
+
+function loadColor(load) {
+  if (load > 70) return '#f56c6c'
+  if (load > 40) return '#e6a23c'
+  return '#67c23a'
+}
+
+function formatDeliveryTime(date) {
+  const d = new Date(date)
+  const now = new Date()
+  const diff = d - now
+  const hours = Math.floor(diff / 3600000)
+  if (hours < 0) return '已超时'
+  if (hours < 1) return `${Math.floor(diff / 60000)}分钟后`
+  if (hours < 24) return `${hours}小时后`
+  return `${Math.floor(hours / 24)}天后`
+}
+
+function formatDate(date) {
+  const d = new Date(date)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function handleAssignOrder(order) {
+  const wsId = schedulingManager.assignOptimalWorkstation(order)
+  if (wsId) {
+    ElMessage.success(`订单 ${order.id} 已分配到工位 ${wsId}`)
+  } else {
+    ElMessage.error('分配失败，请检查工位状态')
+  }
+}
+
+function handleAutoAssignAll() {
+  const pending = schedulingManager.getPendingOrders()
+  let successCount = 0
+  pending.forEach(order => {
+    const wsId = schedulingManager.assignOptimalWorkstation(order)
+    if (wsId) successCount++
+  })
+  ElMessage.success(`已自动分配 ${successCount} 个订单`)
+}
+
+function handleCompleteMaintenance(maintenanceId) {
+  schedulingManager.completeMaintenance(maintenanceId)
+  ElMessage.success(`维护批次 ${maintenanceId} 已完成`)
 }
 </script>
 
@@ -311,5 +555,147 @@ function handleMenuSelect(index) {
 .status-dot.danger {
   background: #ff4d4f;
   box-shadow: 0 0 8px rgba(255, 77, 79, 0.6);
+}
+
+.scheduling-panel {
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(24, 144, 255, 0.2);
+  padding: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.panel-section {
+  margin-bottom: 16px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.order-list, .maintenance-list, .recommendation-list, .workstation-loads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-item, .maintenance-item, .rec-item, .load-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(24, 144, 255, 0.2);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.order-header, .mt-header, .load-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.order-id, .mt-id {
+  font-weight: 600;
+  color: #fff;
+}
+
+.order-info {
+  display: flex;
+  justify-content: space-between;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+}
+
+.order-dish {
+  color: #fff;
+}
+
+.order-meta {
+  font-size: 11px;
+  color: #8c8c8c;
+  margin-bottom: 6px;
+}
+
+.order-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mt-info {
+  display: flex;
+  justify-content: space-between;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+}
+
+.mt-desc {
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.mt-time {
+  font-size: 11px;
+  color: #8c8c8c;
+  margin-bottom: 6px;
+}
+
+.maintenance-item.need-maintenance {
+  border-color: #faad14;
+  background: rgba(250, 173, 20, 0.1);
+}
+
+.rec-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #8c8c8c;
+}
+
+.rec-score {
+  color: #1890ff;
+  font-weight: 600;
+}
+
+.rec-item .空闲 {
+  color: #52c41a;
+}
+
+.rec-item .正常 {
+  color: #1890ff;
+}
+
+.rec-item .繁忙 {
+  color: #faad14;
+}
+
+.load-high {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.load-medium {
+  color: #e6a23c;
+  font-weight: 600;
+}
+
+.load-low {
+  color: #67c23a;
+  font-weight: 600;
+}
+
+.empty {
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 12px;
+  padding: 12px;
 }
 </style>

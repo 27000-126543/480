@@ -17,6 +17,8 @@
         @focus-area="handleFocusArea"
         @trigger-event="handleTriggerEvent"
         @export-report="handleExportReport"
+        @update:showApproval="showApprovalPanel = $event"
+        @update:showEquipment="showEquipmentPanel = $event"
       />
 
       <InfoPanel 
@@ -116,11 +118,11 @@ function initScene() {
  sceneManager.onVehicleClick = handleVehicleClick;
 }
 function handleLoginSuccess(user) {
- isLoggedIn.value = true;
- currentUser.value = user;
- startDataUpdate();
- authManager.recordOperationLog('登录系统', '', 'success');
- ElMessage.success(`欢迎回来，${user.name}`);
+  isLoggedIn.value = true;
+  currentUser.value = user;
+  startDataUpdate();
+  authManager.recordOperationLog('登录系统', '', 'success');
+  ElMessage.success(`欢迎回来，${user.name}`);
 }
 function handleLogout() {
  authManager.logout();
@@ -179,13 +181,14 @@ function handleTriggerEvent(eventType) {
  ElMessage.info('设备故障模拟功能');
  }
 }
-function handleExportReport() {
- const report = reportManager.generateDailyReport();
- const result = reportManager.exportToExcel(report);
- if (result.success) {
- ElMessage.success(`报表已导出: ${result.filename}`);
- authManager.recordOperationLog('导出生产日报', result.filename, 'success');
- }
+function handleExportReport(date) {
+  const reportDate = date ? new Date(date) : new Date()
+  const report = reportManager.generateDailyReport(reportDate)
+  const result = reportManager.exportToExcel(report)
+  if (result.success) {
+    ElMessage.success(`报表已导出: ${result.filename}`)
+    authManager.recordOperationLog('导出生产日报', result.filename, 'success')
+  }
 }
 function handleCreateReplenishment(shelfId, quantity) {
  const request = inventoryManager.createReplenishmentRequest(shelfId, quantity);
