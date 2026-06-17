@@ -111,7 +111,7 @@
               </div>
               <div class="order-actions">
                 <el-button 
-                  v-if="order.status === 'pending'" 
+                  v-if="order.status === 'pending' || order.status === 'assigned'" 
                   size="small" 
                   type="primary"
                   @click="handleStartWork(order.id)"
@@ -119,10 +119,18 @@
                   开始处理
                 </el-button>
                 <el-button 
+                  v-if="order.status === 'assigned'" 
+                  size="small" 
+                  type="warning"
+                  @click="handleReassign(order)"
+                >
+                  重新派单
+                </el-button>
+                <el-button 
                   v-if="order.status === 'in_progress'" 
                   size="small" 
                   type="success"
-                  @click="showCompleteDialog = true; completingOrder = order.id"
+                  @click="handleOpenComplete(order)"
                 >
                   完成维修
                 </el-button>
@@ -170,20 +178,24 @@
           </el-form-item>
           <el-form-item label="维修前照片">
             <el-upload
+              v-model:file-list="completeForm.beforePhotos"
               action="#"
               :auto-upload="false"
               list-type="picture-card"
-              :on-change="(file) => handleBeforePhoto(file)"
+              :limit="3"
+              accept="image/*"
             >
               <el-icon><Plus /></el-icon>
             </el-upload>
           </el-form-item>
           <el-form-item label="维修后照片">
             <el-upload
+              v-model:file-list="completeForm.afterPhotos"
               action="#"
               :auto-upload="false"
               list-type="picture-card"
-              :on-change="(file) => handleAfterPhoto(file)"
+              :limit="3"
+              accept="image/*"
             >
               <el-icon><Plus /></el-icon>
             </el-upload>
@@ -304,12 +316,18 @@ function handleStartWork(orderId) {
   }
 }
 
-function handleBeforePhoto(file) {
-  completeForm.value.beforePhotos.push(file)
+function handleOpenComplete(order) {
+  completingOrder.value = order.id
+  completeForm.value = {
+    resolution: '',
+    beforePhotos: [],
+    afterPhotos: []
+  }
+  showCompleteDialog.value = true
 }
 
-function handleAfterPhoto(file) {
-  completeForm.value.afterPhotos.push(file)
+function handleReassign(order) {
+  ElMessage.info(`重新派单功能 - 工单: ${order.id}`)
 }
 
 function handleCompleteWork() {
@@ -318,15 +336,18 @@ function handleCompleteWork() {
     return
   }
 
+  const beforePhotos = completeForm.value.beforePhotos.map(f => f.name || f.url || 'photo')
+  const afterPhotos = completeForm.value.afterPhotos.map(f => f.name || f.url || 'photo')
+
   const result = equipmentManager.completeWorkOrder(
     completingOrder.value,
     completeForm.value.resolution,
-    completeForm.value.beforePhotos,
-    completeForm.value.afterPhotos
+    beforePhotos,
+    afterPhotos
   )
 
   if (result) {
-    ElMessage.success('工单已完成')
+    ElMessage.success('工单已完成，设备状态已恢复正常')
     authManager.recordOperationLog('完成维修工单', completingOrder.value, 'success')
     showCompleteDialog.value = false
     completeForm.value = {
@@ -338,7 +359,22 @@ function handleCompleteWork() {
 }
 
 function viewOrderDetail(order) {
-  ElMessage.info('查看工单详情')
+  const detail = `
+工单编号: ${order.id}
+标题: ${order.title}
+设备: ${order.equipmentId}
+状态: ${orderText(order.status)}
+优先级: ${order.priority}
+创建时间: ${formatDate(order.createdAt)}
+描述: ${order.description}
+${order.assignee ? '处理人: ' + order.assignee : ''}
+  `.trim()
+  ElMessage({
+    message: detail,
+    type: 'info',
+    duration: 5000,
+    showClose: true
+  })
 }
 </script>
 

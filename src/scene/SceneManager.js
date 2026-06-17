@@ -11,6 +11,8 @@ import { createShelf } from './objects/Shelf.js'
 import { createDeliveryVehicle } from './objects/DeliveryVehicle.js'
 import { EnvironmentSystem } from './systems/EnvironmentSystem.js'
 import { AirflowSystem } from './systems/AirflowSystem.js'
+import { schedulingManager } from '../managers/SchedulingManager.js'
+import { inventoryManager } from '../managers/InventoryManager.js'
 
 class SceneManager {
   constructor() {
@@ -383,6 +385,16 @@ class SceneManager {
   updateWorkstationDisplay(workstation) {
     const data = workstation.userData
     const label = workstation.getObjectByName('infoLabel')
+    const statusLight = workstation.getObjectByName('statusLight')
+    
+    if (statusLight) {
+      let color = 0x52c41a
+      if (data.status === 'maintenance') color = 0xfaad14
+      else if (data.status === 'fault') color = 0xff4d4f
+      else if (data.status === 'idle') color = 0x8c8c8c
+      statusLight.material.color.setHex(color)
+    }
+    
     if (label) {
       const canvas = label.material.map.image
       const ctx = canvas.getContext('2d')
@@ -391,7 +403,7 @@ class SceneManager {
       ctx.fillStyle = 'rgba(16, 32, 60, 0.95)'
       ctx.fillRect(0, 0, 256, 128)
       
-      ctx.strokeStyle = data.status === 'maintenance' ? '#faad14' : '#1890ff'
+      ctx.strokeStyle = data.status === 'maintenance' ? '#faad14' : data.status === 'fault' ? '#ff4d4f' : '#1890ff'
       ctx.lineWidth = 2
       ctx.strokeRect(0, 0, 256, 128)
       
@@ -404,6 +416,15 @@ class SceneManager {
       ctx.font = '14px Microsoft YaHei'
       ctx.fillText(`菜品: ${data.currentDish}`, 10, 50)
       
+      const statusText = {
+        'running': '运行中',
+        'maintenance': '维护中',
+        'fault': '故障',
+        'idle': '空闲'
+      }[data.status] || '运行中'
+      ctx.fillStyle = data.status === 'maintenance' ? '#faad14' : data.status === 'fault' ? '#ff4d4f' : '#52c41a'
+      ctx.fillText(`状态: ${statusText}`, 140, 25)
+      
       const capacityColor = data.capacityRate > 80 ? '#ff4d4f' : data.capacityRate > 60 ? '#faad14' : '#52c41a'
       ctx.fillStyle = capacityColor
       ctx.fillText(`产能: ${data.capacityRate.toFixed(1)}%`, 10, 72)
@@ -413,6 +434,10 @@ class SceneManager {
       
       ctx.fillStyle = '#13c2c2'
       ctx.fillText(`湿度: ${data.humidity.toFixed(1)}%`, 140, 94)
+      
+      ctx.fillStyle = '#8c8c8c'
+      ctx.font = '11px Microsoft YaHei'
+      ctx.fillText(`运行: ${data.runtime.toFixed(1)}h`, 10, 118)
       
       label.material.map.needsUpdate = true
     }
@@ -428,10 +453,16 @@ class SceneManager {
 
   updateShelfDisplay(shelf) {
     const data = shelf.userData
+    const liveItem = inventoryManager.getInventoryItem(data.id)
+    if (liveItem) {
+      data.stock = liveItem.stock
+      data.maxStock = liveItem.maxStock
+      data.threshold = liveItem.threshold
+    }
     const frame = shelf.getObjectByName('frame')
     const stockBar = shelf.getObjectByName('stockBar')
     
-    const stockRatio = data.stock / data.maxStock
+    const stockRatio = data.maxStock > 0 ? data.stock / data.maxStock : 0
     if (stockBar) {
       stockBar.scale.y = Math.max(0.01, stockRatio * 3)
       stockBar.position.y = stockBar.scale.y / 2 + 0.1
@@ -550,6 +581,10 @@ class SceneManager {
         if (data.runtime > 4 && !data.maintenanceScheduled) {
           data.maintenanceScheduled = true
           data.status = 'maintenance'
+          schedulingManager.checkAndScheduleMaintenance(data.id, data.runtime)
+          if (data.statusLight) {
+            data.statusLight.material.color.setHex(0xfaad14)
+          }
         }
       }
       this.updateWorkstationDisplay(workstation)

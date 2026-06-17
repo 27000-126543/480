@@ -5,6 +5,7 @@
     width="600px"
     class="workstation-detail"
     :close-on-click-modal="false"
+    @opened="handleDialogOpened"
   >
     <div v-if="data" class="detail-content">
       <div class="info-row">
@@ -77,7 +78,9 @@
             <el-icon><Refresh /></el-icon>刷新
           </el-button>
         </div>
-        <div ref="chartRef" class="chart-container"></div>
+        <div class="chart-wrapper">
+          <canvas ref="chartRef"></canvas>
+        </div>
       </div>
 
       <div class="action-section">
@@ -98,12 +101,33 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { HotWater, Cpu, Refresh, Tools, Warning } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import Chart from 'chart.js/auto'
+import {
+  Chart,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  LineController,
+  Filler,
+  Legend,
+  Tooltip
+} from 'chart.js'
 import { equipmentManager } from '../managers/EquipmentManager.js'
 import { authManager } from '../managers/AuthManager.js'
+
+Chart.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  LineController,
+  Filler,
+  Legend,
+  Tooltip
+)
 
 const props = defineProps({
   visible: Boolean,
@@ -153,21 +177,54 @@ function getCapacityColor(rate) {
   return '#52c41a'
 }
 
+function destroyChart() {
+  if (chartInstance) {
+    try {
+      chartInstance.destroy()
+    } catch (e) {
+      console.warn('Chart destroy warning:', e)
+    }
+    chartInstance = null
+  }
+}
+
+function generateProductionData() {
+  const labels = []
+  const values = []
+  const targets = []
+  const now = new Date()
+  const baseProduction = (props.data?.capacityRate || 70) / 100
+
+  for (let i = 23; i >= 0; i--) {
+    const hour = new Date(now.getTime() - i * 3600000)
+    labels.push(`${hour.getHours()}:00`)
+    const baseValue = Math.floor(80 * baseProduction + Math.random() * 40)
+    values.push(baseValue)
+    targets.push(100)
+  }
+
+  return { labels, values, targets }
+}
+
 function initChart() {
   if (!chartRef.value) {
-    console.warn('Chart container not found')
+    console.warn('Chart canvas ref not available')
     return
   }
 
-  try {
-    if (chartInstance) {
-      chartInstance.destroy()
-      chartInstance = null
-    }
+  const canvas = chartRef.value
+  if (!canvas.offsetWidth || !canvas.offsetHeight) {
+    console.warn('Canvas has no dimensions, retrying...')
+    setTimeout(initChart, 100)
+    return
+  }
 
-    const ctx = chartRef.value.getContext('2d')
+  destroyChart()
+
+  try {
+    const ctx = canvas.getContext('2d')
     if (!ctx) {
-      console.warn('Canvas context not available')
+      console.warn('Canvas 2D context not available')
       return
     }
 
@@ -182,17 +239,21 @@ function initChart() {
             label: '实际产量',
             data: productionData.values,
             borderColor: '#1890ff',
-            backgroundColor: 'rgba(24, 144, 255, 0.1)',
+            backgroundColor: 'rgba(24, 144, 255, 0.15)',
             fill: true,
-            tension: 0.4,
-            pointRadius: 3,
-            pointHoverRadius: 5
+            tension: 0.35,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            pointBackgroundColor: '#1890ff',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1
           },
           {
             label: '目标产量',
             data: productionData.targets,
             borderColor: '#52c41a',
-            borderDash: [5, 5],
+            borderDash: [6, 4],
+            borderWidth: 2,
             fill: false,
             tension: 0,
             pointRadius: 0
@@ -202,70 +263,113 @@ function initChart() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+          duration: 500
+        },
+        interaction: {
+          intersect: false,
+          mode: 'index'
+        },
         plugins: {
           legend: {
             position: 'top',
+            align: 'end',
             labels: {
-              color: '#8c8c8c',
-              font: { size: 11 }
+              color: '#e6f7ff',
+              font: { size: 11, family: 'Microsoft YaHei' },
+              boxWidth: 16,
+              boxHeight: 8,
+              padding: 12,
+              usePointStyle: false
             }
           },
           tooltip: {
-            backgroundColor: 'rgba(16, 32, 60, 0.95)',
+            backgroundColor: 'rgba(16, 32, 60, 0.98)',
             titleColor: '#fff',
             bodyColor: '#e6f7ff',
-            borderColor: 'rgba(24, 144, 255, 0.3)',
-            borderWidth: 1
+            borderColor: 'rgba(24, 144, 255, 0.4)',
+            borderWidth: 1,
+            padding: 10,
+            titleFont: { size: 12, weight: 'bold' },
+            bodyFont: { size: 11 },
+            displayColors: true,
+            callbacks: {
+              label: function(context) {
+                return `${context.dataset.label}: ${context.parsed.y} 份`
+              }
+            }
           }
         },
         scales: {
           x: {
             grid: {
-              color: 'rgba(255, 255, 255, 0.05)'
+              color: 'rgba(255, 255, 255, 0.06)',
+              drawTicks: false
             },
             ticks: {
               color: '#8c8c8c',
-              font: { size: 10 }
+              font: { size: 10, family: 'Microsoft YaHei' },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 8
+            },
+            border: {
+              color: 'rgba(255, 255, 255, 0.1)'
             }
           },
           y: {
             grid: {
-              color: 'rgba(255, 255, 255, 0.05)'
+              color: 'rgba(255, 255, 255, 0.06)',
+              drawTicks: false
             },
             ticks: {
               color: '#8c8c8c',
-              font: { size: 10 }
+              font: { size: 10, family: 'Microsoft YaHei' }
             },
-            beginAtZero: true
+            border: {
+              color: 'rgba(255, 255, 255, 0.1)'
+            },
+            beginAtZero: true,
+            suggestedMax: 140
           }
         }
       }
     })
+
+    console.log('Chart initialized successfully')
   } catch (error) {
     console.error('Chart initialization failed:', error)
-    ElMessage.error('图表加载失败，请刷新重试')
+    ElMessage.error('图表加载失败，请关闭弹窗后重试')
   }
-}
-
-function generateProductionData() {
-  const labels = []
-  const values = []
-  const targets = []
-  const now = new Date()
-
-  for (let i = 23; i >= 0; i--) {
-    const hour = new Date(now.getTime() - i * 3600000)
-    labels.push(`${hour.getHours()}:00`)
-    values.push(Math.floor(60 + Math.random() * 60))
-    targets.push(100)
-  }
-
-  return { labels, values, targets }
 }
 
 function refreshChart() {
-  initChart()
-  ElMessage.success('数据已刷新')
+  if (!props.visible) return
+
+  if (chartInstance) {
+    try {
+      const productionData = generateProductionData()
+      chartInstance.data.labels = productionData.labels
+      chartInstance.data.datasets[0].data = productionData.values
+      chartInstance.data.datasets[1].data = productionData.targets
+      chartInstance.update('active')
+      ElMessage.success('数据已刷新，图表已更新')
+    } catch (error) {
+      console.error('Chart update failed:', error)
+      initChart()
+      ElMessage.success('数据已刷新')
+    }
+  } else {
+    initChart()
+    ElMessage.success('数据已刷新')
+  }
+}
+
+function handleDialogOpened() {
+  console.log('Dialog opened, initializing chart...')
+  setTimeout(() => {
+    initChart()
+  }, 50)
 }
 
 function handleViewOrders() {
@@ -294,24 +398,13 @@ function handleReportFault() {
 }
 
 watch(() => props.visible, (val) => {
-  if (val) {
-    nextTick(() => {
-      initChart()
-    })
-  } else {
-    if (chartInstance) {
-      chartInstance.destroy()
-      chartInstance = null
-    }
+  if (!val) {
+    destroyChart()
   }
 })
 
-onMounted(() => {
-  if (props.visible) {
-    nextTick(() => {
-      initChart()
-    })
-  }
+onBeforeUnmount(() => {
+  destroyChart()
 })
 </script>
 
@@ -471,9 +564,17 @@ onMounted(() => {
   border-radius: 8px;
 }
 
-.chart-container {
+.chart-wrapper {
+  position: relative;
   height: 200px;
   width: 100%;
+  min-height: 200px;
+}
+
+.chart-wrapper canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .action-section {

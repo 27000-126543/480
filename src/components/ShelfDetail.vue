@@ -21,9 +21,9 @@
 
         <div class="stock-display">
           <div class="stock-info">
-            <span class="stock-value">{{ data.stock }}</span>
+            <span class="stock-value">{{ currentStock }}</span>
             <span class="stock-unit">{{ data.unit || 'kg' }}</span>
-            <span class="stock-max">/ {{ data.maxStock }}</span>
+            <span class="stock-max">/ {{ currentMaxStock }}</span>
           </div>
           <div class="stock-bar">
             <div class="stock-bar-fill" :style="{ width: stockPercentage + '%', background: stockBarColor }"></div>
@@ -33,8 +33,8 @@
           </div>
           <div class="stock-labels">
             <span>0</span>
-            <span class="threshold-text" :style="{ left: thresholdPercentage + '%' }">{{ data.threshold }}</span>
-            <span>{{ data.maxStock }}</span>
+            <span class="threshold-text" :style="{ left: thresholdPercentage + '%' }">{{ currentThreshold }}</span>
+            <span>{{ currentMaxStock }}</span>
           </div>
         </div>
       </div>
@@ -44,7 +44,7 @@
         <div class="detail-grid">
           <div class="detail-item">
             <span class="detail-label">安全阈值</span>
-            <span class="detail-value">{{ data.threshold }} {{ data.unit || 'kg' }}</span>
+            <span class="detail-value">{{ currentThreshold }} {{ data.unit || 'kg' }}</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">库存占比</span>
@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <div v-if="data.stock < data.threshold" class="warning-section">
+      <div v-if="currentStock < currentThreshold" class="warning-section">
         <el-alert
           title="库存低于安全阈值"
           type="warning"
@@ -161,31 +161,52 @@ const replenishForm = ref({
 })
 
 const stockPercentage = computed(() => {
-  if (!props.data?.maxStock) return 0
-  return (props.data.stock / props.data.maxStock) * 100
+  const stock = inventoryItem.value?.stock ?? props.data?.stock ?? 0
+  const max = inventoryItem.value?.maxStock ?? props.data?.maxStock ?? 1
+  return (stock / max) * 100
 })
 
 const thresholdPercentage = computed(() => {
-  if (!props.data?.maxStock) return 0
-  return (props.data.threshold / props.data.maxStock) * 100
+  const threshold = inventoryItem.value?.threshold ?? props.data?.threshold ?? 0
+  const max = inventoryItem.value?.maxStock ?? props.data?.maxStock ?? 1
+  return (threshold / max) * 100
+})
+
+const currentStock = computed(() => {
+  return inventoryItem.value?.stock ?? props.data?.stock ?? 0
+})
+
+const currentMaxStock = computed(() => {
+  return inventoryItem.value?.maxStock ?? props.data?.maxStock ?? 0
+})
+
+const currentThreshold = computed(() => {
+  return inventoryItem.value?.threshold ?? props.data?.threshold ?? 0
 })
 
 const stockStatusText = computed(() => {
-  if (props.data?.stock < props.data?.threshold * 0.5) return '严重不足'
-  if (props.data?.stock < props.data?.threshold) return '库存偏低'
-  if (props.data?.stock < props.data?.maxStock * 0.3) return '库存正常'
+  const stock = currentStock.value
+  const threshold = currentThreshold.value
+  const max = currentMaxStock.value
+  if (stock < threshold * 0.5) return '严重不足'
+  if (stock < threshold) return '库存偏低'
+  if (stock < max * 0.3) return '库存正常'
   return '库存充足'
 })
 
 const stockStatusType = computed(() => {
-  if (props.data?.stock < props.data?.threshold * 0.5) return 'danger'
-  if (props.data?.stock < props.data?.threshold) return 'warning'
+  const stock = currentStock.value
+  const threshold = currentThreshold.value
+  if (stock < threshold * 0.5) return 'danger'
+  if (stock < threshold) return 'warning'
   return 'success'
 })
 
 const stockBarColor = computed(() => {
-  if (props.data?.stock < props.data?.threshold * 0.5) return '#ff4d4f'
-  if (props.data?.stock < props.data?.threshold) return '#faad14'
+  const stock = currentStock.value
+  const threshold = currentThreshold.value
+  if (stock < threshold * 0.5) return '#ff4d4f'
+  if (stock < threshold) return '#faad14'
   return '#52c41a'
 })
 

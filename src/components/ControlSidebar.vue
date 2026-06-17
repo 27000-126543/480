@@ -295,6 +295,7 @@ import {
 } from '@element-plus/icons-vue'
 import { inventoryManager } from '../managers/InventoryManager.js'
 import { schedulingManager } from '../managers/SchedulingManager.js'
+import { sceneManager } from '../scene/SceneManager.js'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -424,8 +425,17 @@ function handleAutoAssignAll() {
 }
 
 function handleCompleteMaintenance(maintenanceId) {
+  const maintenance = schedulingManager.maintenanceSchedule.find(m => m.id === maintenanceId)
+  const workstationId = maintenance?.workstationId
   schedulingManager.completeMaintenance(maintenanceId)
-  ElMessage.success(`维护批次 ${maintenanceId} 已完成`)
+  if (workstationId && sceneManager.updateWorkstationData) {
+    sceneManager.updateWorkstationData(workstationId, {
+      status: 'running',
+      maintenanceScheduled: false,
+      runtime: 0
+    })
+  }
+  ElMessage.success(`维护批次 ${maintenanceId} 已完成，工位状态已恢复`)
 }
 </script>
 
